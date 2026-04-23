@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gestão de Estoque</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- NAVBAR -->
+<nav class="navbar">
+  <div class="navbar-brand"><span class="dot">▣</span> Gestão de Estoque</div>
+  <div class="navbar-user">
+    <span>Olá, <strong id="nome-usuario"></strong></span>
+    <button class="btn-logout" onclick="sair()">Sair</button>
+  </div>
+</nav>
+
+<!-- MAIN -->
+<main class="main-content">
+  <div class="page-header">
+    <div class="page-title">Gestão de Estoque</div>
+    <div class="page-subtitle">Registre movimentações de entrada e saída</div>
+  </div>
+
+  <!-- ALERTAS -->
+  <div id="alertas-container"></div>
+
+  <!-- TABELA DE PRODUTOS -->
+  <div class="toolbar">
+    <div>
+      <strong style="font-size:0.88rem;">Produtos ordenados alfabeticamente (Bubble Sort)</strong>
+    </div>
+    <div class="toolbar-actions">
+      <button class="btn-new" onclick="abrirModalMovimentacao()">+ Nova Movimentação</button>
+      <button class="btn-secondary" onclick="window.location.href='produtos.html'">Voltar</button>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Produto</th>
+          <th>Quantidade</th>
+          <th>Est. Mínimo</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody id="tbody-estoque"></tbody>
+    </table>
+  </div>
+
+  <!-- HISTÓRICO -->
+  <div class="section-title">Histórico de Movimentações</div>
+  <div class="section-subtitle">Últimas movimentações registradas</div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Data</th>
+          <th>Produto</th>
+          <th>Tipo</th>
+          <th>Quantidade</th>
+        </tr>
+      </thead>
+      <tbody id="tbody-historico"></tbody>
+    </table>
+  </div>
+</main>
+
+<!-- MODAL NOVA MOVIMENTAÇÃO -->
+<div class="modal-overlay hidden" id="modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Nova Movimentação</h2>
+    </div>
+    <div class="modal-body">
+      <div class="field-group">
+        <label>Produto *</label>
+        <select id="campo-produto">
+          <option value="">Selecione um produto...</option>
+        </select>
+      </div>
+      <div class="field-group">
+        <label>Tipo de Movimentação *</label>
+        <select id="campo-tipo">
+          <option value="">Selecione...</option>
+          <option value="Entrada">Entrada</option>
+          <option value="Saída">Saída</option>
+        </select>
+      </div>
+      <div class="field-group">
+        <label>Quantidade *</label>
+        <input type="number" id="campo-quantidade" placeholder="0" min="1">
+      </div>
+      <div class="field-group">
+        <label>Data da Movimentação *</label>
+        <input type="date" id="campo-data">
+      </div>
+      <div id="form-error" class="error-msg hidden">Preencha todos os campos obrigatórios.</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="fecharModal()">Cancelar</button>
+      <button class="btn-green" onclick="registrarMovimentacao()">Registrar</button>
+    </div>
+  </div>
+</div>
+
+<script src="db.js"></script>
+<script>
+  const usuario = verificarSessao();
+  document.getElementById('nome-usuario').textContent = usuario.nome;
+
+  function sair() {
+    sessionStorage.removeItem('usuario');
+    window.location.href = 'login.html';
+  }
+
+  function bubbleSort(arr) {
+    const a = [...arr];
+    for (let i = 0; i < a.length - 1; i++) {
+      for (let j = 0; j < a.length - 1 - i; j++) {
+        if (a[j].nome.toLowerCase() > a[j+1].nome.toLowerCase()) {
+          [a[j], a[j+1]] = [a[j+1], a[j]];
+        }
+      }
+    }
+    return a;
+  }
+
+  function renderEstoque() {
+    const produtos = bubbleSort(getProdutos());
+
+    // Alertas
+    const baixos = produtos.filter(p => p.quantidade < p.estoque_min);
+    const alertasDiv = document.getElementById('alertas-container');
+    if (baixos.length) {
+      alertasDiv.innerHTML = `
+        <div class="alert-box">
+          <strong>⚠ Alertas de Estoque:</strong><br>
+          ${baixos.map(p => `<span class="alert-item">"${p.nome}" está abaixo do mínimo (${p.quantidade}/${p.estoque_min})</span>`).join('<br>')}
+        </div>`;
+    } else {
+      alertasDiv.innerHTML = '';
+    }
+
+    // Tabela
+    const tbody = document.getElementById('tbody-estoque');
+    tbody.innerHTML = produtos.map(p => {
+      const abaixo = p.quantidade < p.estoque_min;
+      const badge = abaixo
+        ? `<span class="badge badge-low">Abaixo do mínimo</span>`
+        : `<span class="badge badge-normal">Normal</span>`;
+      return `
+        <tr>
+          <td class="td-id">${p.id}</td>
+          <td>${p.nome}</td>
+          <td>${p.quantidade}</td>
+          <td>${p.estoque_min}</td>
+          <td>${badge}</td>
+        </tr>`;
+    }).join('');
+  }
+
+  function renderHistorico() {
+    const movs = getMovimentacoes().slice().reverse();
+    const tbody = document.getElementById('tbody-historico');
+    if (!movs.length) {
+      tbody.innerHTML = `<tr class="empty-row"><td colspan="4">Nenhuma movimentação registrada.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = movs.map(m => {
+      const cls = m.tipo === 'Entrada' ? 'badge-entrada' : 'badge-saida';
+      return `
+        <tr>
+          <td>${formatarData(m.data)}</td>
+          <td>${m.produto_nome}</td>
+          <td><span class="badge ${cls}">${m.tipo}</span></td>
+          <td>${m.quantidade}</td>
+        </tr>`;
+    }).join('');
+  }
+
+  function abrirModalMovimentacao() {
+    const produtos = bubbleSort(getProdutos());
+    const sel = document.getElementById('campo-produto');
+    sel.innerHTML = '<option value="">Selecione um produto...</option>';
+    produtos.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.nome;
+      sel.appendChild(opt);
+    });
+    document.getElementById('campo-tipo').value = '';
+    document.getElementById('campo-quantidade').value = '';
+    document.getElementById('campo-data').value = new Date().toISOString().split('T')[0];
+    document.getElementById('form-error').classList.add('hidden');
+    document.getElementById('modal-overlay').classList.remove('hidden');
+  }
+
+  function fecharModal() {
+    document.getElementById('modal-overlay').classList.add('hidden');
+  }
+
+  function registrarMovimentacao() {
+    const prodId = parseInt(document.getElementById('campo-produto').value);
+    const tipo = document.getElementById('campo-tipo').value;
+    const qtd = parseInt(document.getElementById('campo-quantidade').value);
+    const data = document.getElementById('campo-data').value;
+    const err = document.getElementById('form-error');
+
+    if (!prodId || !tipo || !qtd || qtd <= 0 || !data) {
+      err.classList.remove('hidden');
+      return;
+    }
+    err.classList.add('hidden');
+
+    // Atualiza estoque do produto
+    const produtos = getProdutos();
+    const idx = produtos.findIndex(p => p.id === prodId);
+    if (idx === -1) return;
+
+    const nomeProd = produtos[idx].nome;
+    if (tipo === 'Entrada') {
+      produtos[idx].quantidade += qtd;
+    } else {
+      produtos[idx].quantidade = Math.max(0, produtos[idx].quantidade - qtd);
+    }
+    saveProdutos(produtos);
+
+    // Registra movimentação
+    const movs = getMovimentacoes();
+    movs.push({
+      id: nextId(movs),
+      produto_id: prodId,
+      produto_nome: nomeProd,
+      tipo,
+      quantidade: qtd,
+      data
+    });
+    saveMovimentacoes(movs);
+
+    fecharModal();
+    renderEstoque();
+    renderHistorico();
+  }
+
+  document.getElementById('modal-overlay').addEventListener('click', function(e) {
+    if (e.target === this) fecharModal();
+  });
+
+  renderEstoque();
+  renderHistorico();
+</script>
+</body>
+</html>
